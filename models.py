@@ -38,7 +38,7 @@ import numpy as np
 #         return x
 
 class HeartRateLSTM(nn.Module):
-    def __init__(self, input_dim: int = 3):
+    def __init__(self, input_dim: int = 3, output_size: int = 1):
         super().__init__()
         self.lstm = nn.LSTM(
             input_size=input_dim,
@@ -47,7 +47,7 @@ class HeartRateLSTM(nn.Module):
             batch_first=True,
             dropout=0.2,
         )
-        self.fc = nn.Linear(64, 1)
+        self.fc = nn.Linear(64, 1) # output_size=1
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
