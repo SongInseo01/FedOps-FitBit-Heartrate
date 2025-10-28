@@ -162,7 +162,7 @@ def load_partition(dataset, validation_split, batch_size):
     # iscal setting
     WINDOW_SIZE = 30
     CSV_PATH = "/home/ubuntu/isfolder/fl_agent_paper/buildmodel/content/heartrate_seconds_merged.csv"
-    train_loader, val_loader, test_loader, meta = load_and_prepare(CSV_PATH, WINDOW_SIZE)
+    train_loader, val_loader, test_loader, meta = load_and_prepare(CSV_PATH, WINDOW_SIZE, batch_size)
 
 
     return train_loader, val_loader, test_loader
@@ -191,9 +191,9 @@ def gl_model_torch_validation(batch_size):
 
     EPS = 1e-6
     WINDOW_SIZE = 30
-    CSV_PATH = "/app/code/heartrate_seconds_merged.csv"
+    CSV_PATH = "/app/code/data/heartrate_seconds_merged.csv"
 
-    train_loader, val_loader, test_loader, meta = load_and_prepare(CSV_PATH, WINDOW_SIZE)
+    train_loader, val_loader, test_loader, meta = load_and_prepare(CSV_PATH, WINDOW_SIZE, batch_size)
     
     gl_val_loader = val_loader
 
