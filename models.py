@@ -8,6 +8,92 @@ from tqdm import tqdm
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from math import sqrt
 import numpy as np
+import pandas as pd
+from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, TensorDataset
+
+
+def create_sequences(features: np.ndarray, window_size: int):
+    """Return (num_seq, window, feat), (num_seq,) with label=next-step HR."""
+    sequences, labels = [], []
+    for idx in range(len(features) - window_size):
+        sequences.append(features[idx : idx + window_size])
+        labels.append(features[idx + window_size, 0])  # column 0: HeartRate
+    return np.stack(sequences), np.asarray(labels)
+
+def load_and_prepare(csv_path: str, window_size: int, batch_size):
+    EPS = 1e-6
+    df = pd.read_csv(csv_path)
+    df["Time"] = pd.to_datetime(df["Time"])
+    df = df.sort_values(["Id", "Time"]).reset_index(drop=True)
+
+    # 가장 데이터가 많은 참가자 선택
+    target_id = df["Id"].value_counts().idxmax()
+    target = (
+        df.loc[df["Id"] == target_id, ["Time", "Value"]]
+        .set_index("Time")
+        .resample("1min")
+        .mean()
+        .ffill()
+        .dropna()
+        .rename(columns={"Value": "HeartRate"})
+        .reset_index()
+    )
+
+    # 시간 주기 특성
+    minute_of_day = target["Time"].dt.hour * 60 + target["Time"].dt.minute
+    target["sin_time"] = np.sin(2 * np.pi * minute_of_day / 1440)
+    target["cos_time"] = np.cos(2 * np.pi * minute_of_day / 1440)
+
+    feature_cols = ["HeartRate", "sin_time", "cos_time"]
+    features = target[feature_cols].to_numpy(dtype=np.float32)
+
+    X_all, y_all = create_sequences(features, window_size=window_size)
+    total = X_all.shape[0]
+    train_end = int(total * 0.7)
+    val_end = int(total * 0.85)
+
+    # Split
+    X_train = torch.tensor(X_all[:train_end], dtype=torch.float32)
+    y_train = torch.tensor(y_all[:train_end], dtype=torch.float32)
+    X_val = torch.tensor(X_all[train_end:val_end], dtype=torch.float32)
+    y_val = torch.tensor(y_all[train_end:val_end], dtype=torch.float32)
+    X_test = torch.tensor(X_all[val_end:], dtype=torch.float32)
+    y_test = torch.tensor(y_all[val_end:], dtype=torch.float32)
+
+    # Standardize (fit on train)
+    feat_mean = X_train.mean(dim=(0, 1), keepdim=True)
+    feat_std = X_train.std(dim=(0, 1), keepdim=True)
+
+    X_train = (X_train - feat_mean) / (feat_std + EPS)
+    X_val = (X_val - feat_mean) / (feat_std + EPS)
+    X_test = (X_test - feat_mean) / (feat_std + EPS)
+
+    # Target normalize
+    y_mean = y_train.mean()
+    y_std = y_train.std()
+
+    y_train_n = (y_train - y_mean) / (y_std + EPS)
+    y_val_n = (y_val - y_mean) / (y_std + EPS)
+    y_test_n = (y_test - y_mean) / (y_std + EPS)
+
+    # Dataloaders
+    train_loader = DataLoader(TensorDataset(X_train, y_train_n), batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(TensorDataset(X_val, y_val_n), batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(TensorDataset(X_test, y_test_n), batch_size=batch_size, shuffle=False)
+
+    meta = {
+        "feature_mean": feat_mean,
+        "feature_std": feat_std,
+        "target_mean": y_mean,
+        "target_std": y_std,
+        "input_dim": X_train.shape[-1],
+        "n_train": len(X_train),
+        "n_val": len(X_val),
+        "n_test": len(X_test),
+        "target_id": int(target_id),
+    }
+    return train_loader, val_loader, test_loader, meta
 
 
 # Define MNIST Model    
@@ -105,6 +191,11 @@ class HeartRateLSTM(nn.Module):
     
 #     return custom_train_torch
 
+WINDOW_SIZE = 30
+CSV_PATH = "/home/ubuntu/isfolder/fl_agent_paper/buildmodel/content/heartrate_seconds_merged.csv"
+batch_size = 32
+train_loader, val_loader, test_loader, meta = load_and_prepare(CSV_PATH, WINDOW_SIZE, batch_size)
+
 def train_torch():
     def custom_train_torch(model, train_loader, epochs, cfg):
         """
@@ -147,7 +238,10 @@ def test_torch():
             return x.to(device)
         return torch.as_tensor(x, dtype=torch.float32, device=device)
 
-    def custom_test_torch(model, test_loader, target_mean, target_std, cfg=None, eps=1e-8):
+    def custom_test_torch(model, test_loader, cfg=None):
+        target_mean = meta["target_mean"]
+        target_std = meta["target_std"]
+        eps = 1e-8
         """
         Evaluate the network on test set (regression).
         Returns:
