@@ -285,9 +285,9 @@ def test_torch():
         y_pred = preds.detach().cpu().numpy()
         y_true = targs.detach().cpu().numpy()
 
-        mae = float(mean_absolute_error(y_true, y_pred))
-        mse = float(mean_squared_error(y_true, y_pred))  # squared=True
-        rmse = float(np.sqrt(mse))
+        mae = mean_absolute_error(y_true, y_pred)
+        mse = mean_squared_error(y_true, y_pred)  # squared=True
+        rmse = sqrt(mse)
 
         print(f"Test MAE: {mae:.2f}")
         print(f"Test RMSE: {rmse:.2f}")
