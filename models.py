@@ -243,13 +243,7 @@ def test_torch():
         target_mean = meta["target_mean"]
         target_std = meta["target_std"]
         eps = 1e-8
-        """
-        Evaluate the network on test set (regression).
-        Returns:
-            - y_true: np.ndarray, shape (N,)
-            - y_pred: np.ndarray, shape (N,)
-            - metrics: {"MAE": float, "RMSE": float}
-        """
+
         print("Starting evaluation...")
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -258,23 +252,41 @@ def test_torch():
 
         preds_norm, targs_norm = [], []
 
+        # 평균 손실 계산용
+        criterion = torch.nn.MSELoss()
+        total_loss = 0.0
+        num_batches = 0
+
         with torch.no_grad():
             for xb, yb in tqdm(test_loader, desc="Test", unit="batch", leave=False):
                 xb = xb.to(device)
                 yb = yb.to(device).float()
+
                 pred = model(xb).squeeze(-1)  # (N, 1)->(N,)
+
+                # 배치 손실 누적 (MSELoss)
+                loss = criterion(pred, yb)
+                total_loss += float(loss.item())
+                num_batches += 1
+
                 preds_norm.append(pred.detach())
                 targs_norm.append(yb.detach())
 
-        if len(preds_norm) == 0:
+        if num_batches == 0:
             print("Test set empty.")
             model.to("cpu")
-            return np.array([]), np.array([]), {"MAE": np.nan, "RMSE": np.nan}
+            average_loss = float("nan")
+            score = float("nan")
+            metrics = {"MAE": np.nan, "RMSE": np.nan, "R2": np.nan}
+            return average_loss, score, metrics
 
+        # 배치 평균 손실
+        average_loss = total_loss / max(num_batches, 1)
+
+        # 역정규화
         preds_norm = torch.cat(preds_norm, dim=0)
         targs_norm = torch.cat(targs_norm, dim=0)
 
-        # 역정규화
         tm = _to_tensor_like(target_mean, preds_norm.device)
         ts = _to_tensor_like(target_std, preds_norm.device)
 
@@ -285,17 +297,27 @@ def test_torch():
         y_pred = preds.detach().cpu().numpy()
         y_true = targs.detach().cpu().numpy()
 
-        mae = mean_absolute_error(y_true, y_pred)
-        mse = mean_squared_error(y_true, y_pred)  # squared=True
-        rmse = sqrt(mse)
+        # 지표 계산 (스칼라)
+        mae = float(mean_absolute_error(y_true, y_pred))
+        mse = float(mean_squared_error(y_true, y_pred))
+        rmse = float(np.sqrt(mse))
+        try:
+            r2 = float(r2_score(y_true, y_pred))
+        except Exception:
+            r2 = float("nan")
+
+        score = r2
+        metrics = {"MAE": mae, "RMSE": rmse, "R2": r2}
 
         print(f"Test MAE: {mae:.2f}")
         print(f"Test RMSE: {rmse:.2f}")
+        print(f"Test R2: {r2:.4f}")
 
         model.to("cpu")
-        return y_true, y_pred, {"MAE": mae, "RMSE": rmse}
+        return average_loss, score, metrics
 
     return custom_test_torch
+
 
 # torch test
 # def test_torch():
