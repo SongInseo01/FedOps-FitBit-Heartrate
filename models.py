@@ -192,7 +192,7 @@ class HeartRateLSTM(nn.Module):
 #     return custom_train_torch
 
 WINDOW_SIZE = 30
-CSV_PATH = "/home/ubuntu/isfolder/fl_agent_paper/buildmodel/content/heartrate_seconds_merged.csv"
+CSV_PATH = "./data/heartrate_seconds_merged.csv"
 # CSV_PATH = "/app/code/data/heartrate_seconds_merged.csv" # for server
 batch_size = 32
 train_loader, val_loader, test_loader, meta = load_and_prepare(CSV_PATH, WINDOW_SIZE, batch_size)
